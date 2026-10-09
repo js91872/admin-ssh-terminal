@@ -18,3 +18,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
+
+dependencies {
+    implementation("com.hierynomus:sshj:0.39.0")
+}
