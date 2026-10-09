@@ -7,6 +7,9 @@ import android.graphics.Typeface
 import android.view.View
 import android.widget.*
 import org.json.JSONArray
+import android.app.AlertDialog
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Local-only command library and terminal theme preview.
@@ -84,6 +87,81 @@ class MainActivity : Activity() {
         commands = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(commands)
         renderCommands()
+        heading("SSH command runner (beta)", 18)
+        val host = EditText(this).apply { hint = "Server hostname or IP"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        val port = EditText(this).apply { hint = "Port (22)"; inputType = 2; setText("22"); setTextColor(Color.WHITE) }
+        val user = EditText(this).apply { hint = "Username"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        val password = EditText(this).apply { hint = "Password"; inputType = 129; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY }
+        val remoteCommand = EditText(this).apply { hint = "Command to run"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        listOf(host, port, user, password, remoteCommand).forEach { root.addView(it) }
+        val vault = CredentialVault(this)
+        val history = HistoryStore(this)
+        val connectionPrefs = getSharedPreferences("ssh_profiles", MODE_PRIVATE)
+        host.setText(connectionPrefs.getString("host", ""))
+        port.setText(connectionPrefs.getString("port", "22"))
+        user.setText(connectionPrefs.getString("user", ""))
+        val profileId = { host.text.toString().trim() + ":" + port.text.toString().trim() + ":" + user.text.toString().trim() }
+        password.setText(vault.read(profileId()) ?: "")
+        val output = TextView(this).apply {
+            text = "SSH output will appear here"
+            textSize = 13f; typeface = Typeface.MONOSPACE
+            setTextColor(Color.rgb(210, 225, 235))
+            setPadding(12, 20, 12, 20)
+            setTextIsSelectable(true)
+        }
+        root.addView(output)
+        Button(this).apply {
+            text = "Run SSH command"
+            setOnClickListener {
+                val h = host.text.toString().trim()
+                val pt = port.text.toString().toIntOrNull()
+                val u = user.text.toString().trim()
+                val pw = password.text.toString()
+                val cmd = remoteCommand.text.toString().trim()
+                if (h.isEmpty() || pt == null || pt !in 1..65535 || u.isEmpty() || pw.isEmpty() || cmd.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Complete all connection and command fields", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val id = profileId()
+                connectionPrefs.edit().putString("host", h).putString("port", pt.toString()).putString("user", u).apply()
+                vault.save(id, pw)
+                output.text = "Connecting..."
+                Thread {
+                    try {
+                        val trusted = connectionPrefs.getString("hostkey:$h:$pt", null)
+                        var newlyApproved: String? = null
+                        val result = SshRunner().execute(h, pt, u, pw, cmd, trusted) { fingerprint ->
+                            val latch = CountDownLatch(1)
+                            var approved = false
+                            runOnUiThread {
+                                AlertDialog.Builder(this@MainActivity)
+                                    .setTitle("Verify SSH server identity")
+                                    .setMessage("Server: $h:$pt\\nHost key: $fingerprint\\nConfirm this fingerprint through a trusted channel before accepting.")
+                                    .setPositiveButton("Trust host") { _, _ -> approved = true; latch.countDown() }
+                                    .setNegativeButton("Cancel") { _, _ -> latch.countDown() }
+                                    .setOnCancelListener { latch.countDown() }
+                                    .show()
+                            }
+                            if (!latch.await(90, TimeUnit.SECONDS)) false else {
+                                if (approved) newlyApproved = fingerprint
+                                approved
+                            }
+                        }
+                        newlyApproved?.let { connectionPrefs.edit().putString("hostkey:$h:$pt", it).apply() }
+                        history.append("$u@$h:$pt", cmd, result.output, result.exitCode)
+                        runOnUiThread { output.text = result.output.ifBlank { "(No output) Exit: ${result.exitCode}" } }
+                    } catch (e: Exception) {
+                        runOnUiThread { output.text = "SSH error: ${e.javaClass.simpleName}: ${e.message ?: "Connection failed"}" }
+                    }
+                }.start()
+            }
+        }.also { root.addView(it) }
+        heading("Recent execution history", 18)
+        val records = history.list()
+        for (i in records.length() - 1 downTo maxOf(0, records.length() - 10)) {
+            val item = records.getJSONObject(i)
+            label(item.optString("server") + " > " + item.optString("command") + "\\n" + item.optString("output").take(500), "#CBD5E1")
+        }
     }
     private fun loadCommands(): JSONArray = try { JSONArray(prefs.getString("items", "[]")) } catch (_: Exception) { JSONArray() }
     private fun renderCommands() {
