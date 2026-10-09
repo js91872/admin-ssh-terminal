@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.*
 import org.json.JSONArray
 import android.app.AlertDialog
+import android.content.Intent
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -156,12 +157,66 @@ class MainActivity : Activity() {
                 }.start()
             }
         }.also { root.addView(it) }
-        heading("Recent execution history", 18)
-        val records = history.list()
-        for (i in records.length() - 1 downTo maxOf(0, records.length() - 10)) {
-            val item = records.getJSONObject(i)
-            label(item.optString("server") + " > " + item.optString("command") + "\\n" + item.optString("output").take(500), "#CBD5E1")
+        heading("Execution history", 18)
+        val search = EditText(this).apply {
+            hint = "Search server, command or output"
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
         }
+        root.addView(search)
+        val historyResults = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(historyResults)
+        fun refreshHistory(query: String) {
+            historyResults.removeAllViews()
+            val records = history.list()
+            var found = 0
+            for (i in records.length() - 1 downTo 0) {
+                val item = records.optJSONObject(i) ?: continue
+                val text = item.optString("server") + " > " + item.optString("command") +
+                    "\\n" + item.optString("output")
+                if (query.isNotBlank() && !text.contains(query, ignoreCase = true)) continue
+                found++
+                val time = java.text.DateFormat.getDateTimeInstance().format(
+                    java.util.Date(item.optLong("timestamp"))
+                )
+                val line = "$time  |  " + text.take(1000)
+                label(line, "#CBD5E1", historyResults)
+            }
+            if (found == 0) label("No matching records", "#94A3B8", historyResults)
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshHistory(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        Button(this).apply {
+            text = "Share history as text"
+            setOnClickListener {
+                val records = history.list()
+                val export = StringBuilder()
+                for (i in 0 until records.length()) {
+                    val item = records.optJSONObject(i) ?: continue
+                    export.append("Server: ").append(item.optString("server")).append('\\n')
+                        .append("Command: ").append(item.optString("command")).append('\\n')
+                        .append("Output:\\n").append(item.optString("output")).append("\\n---\\n")
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Export sensitive terminal history?")
+                    .setMessage("Terminal output may contain credentials or other secrets. Review it before sharing.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Continue") { _, _ ->
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, export.toString())
+                        }, "Share terminal history"))
+                    }.show()
+            }
+        }.also { root.addView(it) }
+        refreshHistory("")
+
     }
     private fun loadCommands(): JSONArray = try { JSONArray(prefs.getString("items", "[]")) } catch (_: Exception) { JSONArray() }
     private fun renderCommands() {
