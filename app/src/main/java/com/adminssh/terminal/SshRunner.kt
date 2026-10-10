@@ -18,6 +18,7 @@ class SshRunner {
     ): Result {
         SSHClient().use { ssh ->
             ssh.addHostKeyVerifier(object : HostKeyVerifier {
+                override fun findExistingAlgorithms(hostname: String, port: Int): MutableList<String> = mutableListOf()
                 override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
                     val digest = MessageDigest.getInstance("SHA-256").digest(key.encoded)
                     val fingerprint = "SHA256:" + Base64.encodeToString(digest, Base64.NO_WRAP or Base64.NO_PADDING)
