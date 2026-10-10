@@ -33,27 +33,29 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         themeIndex = prefs.getInt("theme", 0).coerceIn(palettes.indices)
+        window.statusBarColor = Color.rgb(15, 23, 42)
+        window.navigationBarColor = Color.rgb(15, 23, 42)
         val scroll = ScrollView(this)
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 36, 28, 28)
+            setPadding(20, 16, 20, 32)
             setBackgroundColor(Color.rgb(15, 23, 42))
         }
         scroll.addView(root)
         setContentView(scroll)
-        heading("Admin SSH Terminal", 24)
-        label("Command library • Terminal colors", "#7DD3FC")
-        label("SSH connection and execution are not available in this preview build.", "#FBBF24")
-        heading("Terminal color preset", 18)
+        heading("Admin SSH", 21)
+        label("Servers  •  Commands  •  History", "#7DD3FC")
+        
+        heading("Terminal appearance", 17)
         val selector = Spinner(this)
         selector.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, palettes.map { it.first })
         selector.setSelection(themeIndex)
         root.addView(selector)
         preview = TextView(this).apply {
             typeface = Typeface.MONOSPACE
-            textSize = 14f
-            setPadding(18, 22, 18, 22)
-            text = "root@server:~# git status\\nOn branch main\\nWorking tree clean"
+            textSize = 13f
+            setPadding(14, 16, 14, 16)
+            text = "root@server:~# git status\nOn branch main\nWorking tree clean"
         }
         root.addView(preview)
         selector.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
@@ -64,7 +66,7 @@ class MainActivity : Activity() {
                 applyPalette()
             }
         }
-        heading("Saved commands", 18)
+        heading("Saved commands", 17)
         val name = EditText(this).apply { hint = "Task name"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         val command = EditText(this).apply { hint = "Command (e.g. uptime)"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY); typeface = Typeface.MONOSPACE }
         root.addView(name)
@@ -88,8 +90,8 @@ class MainActivity : Activity() {
         commands = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(commands)
         renderCommands()
-        heading("SSH command runner (beta)", 18)
-        val host = EditText(this).apply { hint = "Server hostname or IP"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
+        heading("SSH command runner", 17)
+        val host = EditText(this).apply { hint = "Host / IP only (not an ssh command)"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         val port = EditText(this).apply { hint = "Port (22)"; inputType = 2; setText("22"); setTextColor(Color.WHITE) }
         val user = EditText(this).apply { hint = "Username"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         val password = EditText(this).apply { hint = "Password"; inputType = 129; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
@@ -157,7 +159,7 @@ class MainActivity : Activity() {
                 }.start()
             }
         }.also { root.addView(it) }
-        heading("Execution history", 18)
+        heading("Execution history", 17)
         val search = EditText(this).apply {
             hint = "Search server, command or output"
             setSingleLine(true)
@@ -256,12 +258,12 @@ class MainActivity : Activity() {
     private fun heading(value: String, size: Int) {
         root.addView(TextView(this).apply {
             text = value; textSize = size.toFloat(); setTextColor(Color.WHITE)
-            setPadding(0, 16, 0, 12); typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 14, 0, 8); typeface = Typeface.DEFAULT_BOLD
         })
     }
     private fun label(value: String, color: String, target: LinearLayout = root) {
         target.addView(TextView(this).apply {
-            text = value; textSize = 14f; setTextColor(Color.parseColor(color))
+            text = value; textSize = 13f; setTextColor(Color.parseColor(color))
             setPadding(0, 8, 0, 8); typeface = Typeface.MONOSPACE
         })
     }
