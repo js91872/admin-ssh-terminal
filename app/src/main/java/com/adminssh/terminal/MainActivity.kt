@@ -92,7 +92,7 @@ class MainActivity : Activity() {
         val host = EditText(this).apply { hint = "Server hostname or IP"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         val port = EditText(this).apply { hint = "Port (22)"; inputType = 2; setText("22"); setTextColor(Color.WHITE) }
         val user = EditText(this).apply { hint = "Username"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        val password = EditText(this).apply { hint = "Password"; inputType = 129; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY }
+        val password = EditText(this).apply { hint = "Password"; inputType = 129; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         val remoteCommand = EditText(this).apply { hint = "Command to run"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
         listOf(host, port, user, password, remoteCommand).forEach { root.addView(it) }
         val vault = CredentialVault(this)
@@ -199,8 +199,8 @@ class MainActivity : Activity() {
                 val export = StringBuilder()
                 for (i in 0 until records.length()) {
                     val item = records.optJSONObject(i) ?: continue
-                    export.append("Server: ").append(item.optString("server")).append('\\n')
-                        .append("Command: ").append(item.optString("command")).append('\\n')
+                    export.append("Server: ").append(item.optString("server")).append('\n')
+                        .append("Command: ").append(item.optString("command")).append('\n')
                         .append("Output:\\n").append(item.optString("output")).append("\\n---\\n")
                 }
                 AlertDialog.Builder(this@MainActivity)
