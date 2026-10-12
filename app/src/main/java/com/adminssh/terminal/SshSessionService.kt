@@ -108,7 +108,7 @@ class SshSessionService : Service() {
                             .notify(1001, notification("Connected to $serverLabel"))
                         notifyState("Connected")
                     }
-                    publish(output.replace(Regex("\\u001B\\\\[[0-?]*[ -/]*[@-~]"), "").replace("\r", ""))
+                    publish(output.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "").replace("\r", ""))
                 },
                 { reason ->
                     if (id != generation) return@connect
