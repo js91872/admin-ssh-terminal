@@ -1,6 +1,9 @@
 package com.adminssh.terminal
 
 import android.app.Activity
+import android.content.ComponentName
+import android.content.ServiceConnection
+import android.os.IBinder
 import android.app.AlertDialog
 import android.os.Bundle
 import android.content.Intent
@@ -25,7 +28,66 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("ssh_profiles", MODE_PRIVATE) }
     private val vault by lazy { CredentialVault(this) }
     private val log by lazy { File(filesDir, "ssh-history.txt") }
-    private var ssh: InteractiveSsh? = null
+    private var service: SshSessionService? = null
+    private var bound = false
+    private var showingTerminal = false
+    private var pending: Array<String>? = null
+    private val listener = object : SshSessionService.Listener {
+        override fun onText(value: String) {
+            runOnUiThread {
+                if (!showingTerminal) return@runOnUiThread
+                val clean = value.replace(Regex("\\u001B\\\\[[0-?]*[ -/]*[@-~]"), "").replace("\r", "")
+                append(clean, outColor)
+                synchronized(lastOutput) { lastOutput.append(clean) }
+                try { log.appendText(clean) } catch (_: Exception) {}
+            }
+        }
+        override fun onState(active: Boolean, message: String) {
+            runOnUiThread {
+                connected = active
+                if (showingTerminal && ::command.isInitialized) command.isEnabled = active
+            }
+        }
+        override fun approveKey(fingerprint: String): Boolean {
+            val latch = CountDownLatch(1)
+            var approved = false
+            runOnUiThread {
+                AlertDialog.Builder(this@MainActivity).setTitle("Verify SSH host key")
+                    .setMessage("Fingerprint: $fingerprint")
+                    .setPositiveButton("Trust") { _, _ ->
+                        approved = true
+                        prefs.edit().putString("hostkey:" + server.substringAfter("@"), fingerprint).apply()
+                        latch.countDown()
+                    }
+                    .setNegativeButton("Cancel") { _, _ -> latch.countDown() }
+                    .setOnCancelListener { latch.countDown() }.show()
+            }
+            return latch.await(90, TimeUnit.SECONDS) && approved
+        }
+    }
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val target = (binder as SshSessionService.LocalBinder).service()
+            service = target
+            bound = true
+            if (target.active || target.connecting) {
+                server = target.serverLabel
+                transcript.clear()
+                terminal()
+            }
+            target.subscribe(listener)
+            pending?.let {
+                pending = null
+                target.connect(it[0], it[1].toInt(), it[2], it[3],
+                    prefs.getString("hostkey:${it[0]}:${it[1]}", null))
+            }
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            service = null
+            bound = false
+            connected = false
+        }
+    }
     private var connected = false
     private var server = ""
     private var cmdColor = 0xff7dd3fc.toInt()
@@ -47,6 +109,7 @@ class MainActivity : Activity() {
         cmdColor = prefs.getInt("cmdColor", cmdColor)
         outColor = prefs.getInt("outColor", outColor)
         login()
+        bindService(Intent(this, SshSessionService::class.java), connection, BIND_AUTO_CREATE)
     }
     private fun page(title: String) {
         root = LinearLayout(this).apply {
@@ -86,6 +149,7 @@ class MainActivity : Activity() {
         return edit
     }
     private fun login() {
+        showingTerminal = false
         connected = false
         page("Admin SSH Terminal")
         // Keep the login card vertically centered while allowing the keyboard to resize it.
@@ -156,6 +220,7 @@ class MainActivity : Activity() {
             android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
     }
     private fun terminal() {
+        showingTerminal = true
         page("Admin SSH Terminal")
         val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         topRow.addView(TextView(this).apply {
@@ -228,53 +293,14 @@ class MainActivity : Activity() {
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
     }
     private fun connect(host: String, port: Int, user: String, password: String) {
-        ssh?.disconnect()
-        val connection = InteractiveSsh()
-        ssh = connection
-        server = user + "@" + host + ":" + port
+        server = "$user@$host:$port"
         transcript.clear()
         terminal()
-        append("Connecting to " + server + "...\n", outColor)
-        Thread {
-            var newFingerprint: String? = null
-            connection.connect(host, port, user, password, prefs.getString("hostkey:" + host + ":" + port, null),
-                { fingerprint ->
-                    val latch = CountDownLatch(1)
-                    var approved = false
-                    runOnUiThread {
-                        AlertDialog.Builder(this)
-                            .setTitle("Verify SSH host key")
-                            .setMessage("Server: " + host + ":" + port + "\nFingerprint: " + fingerprint +
-                                "\nVerify against a trusted server record.")
-                            .setPositiveButton("Trust") { _, _ -> approved = true; latch.countDown() }
-                            .setNegativeButton("Cancel") { _, _ -> latch.countDown() }
-                            .setOnCancelListener { latch.countDown() }.show()
-                    }
-                    val ok = latch.await(90, TimeUnit.SECONDS) && approved
-                    if (ok) newFingerprint = fingerprint
-                    ok
-                },
-                { output ->
-                    newFingerprint?.let {
-                        prefs.edit().putString("hostkey:" + host + ":" + port, it).apply()
-                        newFingerprint = null
-                    }
-                    runOnUiThread {
-                        connected = true
-                        val clean = output.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "").replace("\r", "")
-                        append(clean, outColor)
-                        synchronized(lastOutput) { lastOutput.append(clean) }
-                        try { log.appendText(clean) } catch (_: Exception) {}
-                    }
-                },
-                { reason ->
-                    runOnUiThread {
-                        connected = false
-                        append("\n" + reason + "\n", outColor)
-                        if (::command.isInitialized) command.isEnabled = false
-                    }
-                })
-        }.start()
+        command.isEnabled = false
+        startForegroundService(Intent(this, SshSessionService::class.java))
+        val details = arrayOf(host, port.toString(), user, password)
+        if (service == null) pending = details
+        else service?.connect(host, port, user, password, prefs.getString("hostkey:$host:$port", null))
     }
     private fun submit() {
         val value = command.text.toString()
@@ -289,7 +315,7 @@ class MainActivity : Activity() {
         try { log.appendText("\n[" + server + "] $ " + value + "\n") } catch (_: Exception) {}
         command.text.clear()
         Thread {
-            try { ssh?.send(value) }
+            try { service?.send(value) }
             catch (e: Exception) { runOnUiThread { append("Send failed: " + e.message + "\n", outColor) } }
         }.start()
     }
@@ -330,7 +356,7 @@ class MainActivity : Activity() {
                         putExtra(Intent.EXTRA_TEXT, if (log.exists()) log.readText() else "")
                     }, "Share SSH history"))
                 }.show()
-            6 -> { ssh?.disconnect(); login() }
+            6 -> { service?.disconnect(); login() }
             else -> return super.onOptionsItemSelected(item)
         }
         return true
@@ -340,7 +366,7 @@ class MainActivity : Activity() {
         root.requestApplyInsets()
     }
     override fun onDestroy() {
-        if (isFinishing) ssh?.disconnect()
+        if (bound) { service?.unsubscribe(listener); unbindService(connection); bound = false }
         super.onDestroy()
     }
 }
