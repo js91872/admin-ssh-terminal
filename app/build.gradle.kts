@@ -26,4 +26,5 @@ android {
 
 dependencies {
     implementation("com.hierynomus:sshj:0.39.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 }
