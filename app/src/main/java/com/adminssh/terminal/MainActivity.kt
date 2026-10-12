@@ -14,6 +14,8 @@ import android.text.style.ForegroundColorSpan
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.WindowInsets
+import android.content.res.Configuration
 import android.widget.*
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -56,7 +58,17 @@ class MainActivity : Activity() {
             text = title; textSize = 22f; setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
         })
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                view.setPadding(dp(16), maxOf(dp(12), bars.top + dp(8)),
+                    dp(16), maxOf(dp(12), maxOf(bars.bottom, ime.bottom) + dp(8)))
+                insets
+            }
+        }
         setContentView(root)
+        root.requestApplyInsets()
     }
     private fun field(hintText: String, initial: String = "", password: Boolean = false): EditText {
         val edit = EditText(this).apply {
@@ -179,6 +191,22 @@ class MainActivity : Activity() {
         }
         row.addView(command, LinearLayout.LayoutParams(0, dp(52), 1f))
         row.addView(Button(this).apply {
+            text = "Paste"
+            isAllCaps = false
+            textSize = 12f
+            setOnClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = clipboard.primaryClip
+                val pasted = clip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString()
+                if (!pasted.isNullOrEmpty()) {
+                    command.text.insert(command.selectionStart.coerceAtLeast(0), pasted)
+                    command.requestFocus()
+                } else {
+                    Toast.makeText(this@MainActivity, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }, LinearLayout.LayoutParams(dp(72), dp(52)))
+        row.addView(Button(this).apply {
             text = "↵"; setOnClickListener { submit() }
         }, LinearLayout.LayoutParams(dp(62), dp(52)))
         root.addView(row)
@@ -299,8 +327,12 @@ class MainActivity : Activity() {
         }
         return true
     }
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        root.requestApplyInsets()
+    }
     override fun onDestroy() {
-        ssh?.disconnect()
+        if (isFinishing) ssh?.disconnect()
         super.onDestroy()
     }
 }
