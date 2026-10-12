@@ -35,12 +35,12 @@ class MainActivity : Activity() {
     private lateinit var screen: TextView
     private lateinit var command: EditText
     private lateinit var scroll: ScrollView
-    private val background = 0xff0f172a.toInt()
+    private val terminalBackgroundColor = 0xff0f172a.toInt()
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = background
-        window.navigationBarColor = background
+        window.statusBarColor = terminalBackgroundColor
+        window.navigationBarColor = terminalBackgroundColor
         cmdColor = prefs.getInt("cmdColor", cmdColor)
         outColor = prefs.getInt("outColor", outColor)
         login()
@@ -49,7 +49,7 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            setBackgroundColor(background)
+            setBackgroundColor(terminalBackgroundColor)
         }
         root.addView(TextView(this).apply {
             text = title; textSize = 22f; setTextColor(Color.WHITE)
