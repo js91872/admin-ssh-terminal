@@ -188,6 +188,14 @@ class MainActivity : Activity() {
             setBackgroundColor(0xff1e293b.toInt())
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnEditorActionListener { _, _, _ -> submit(); true }
+            setOnLongClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                val pasted = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString()
+                if (!pasted.isNullOrEmpty()) {
+                    text.insert(selectionStart.coerceAtLeast(0), pasted)
+                    true
+                } else false
+            }
         }
         row.addView(command, LinearLayout.LayoutParams(0, dp(52), 1f))
         row.addView(Button(this).apply {
