@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private val lastOutput = StringBuilder()
     private val transcript = SpannableStringBuilder()
     private lateinit var root: LinearLayout
+    private var loginForm: LinearLayout? = null
     private lateinit var screen: TextView
     private lateinit var command: EditText
     private lateinit var scroll: ScrollView
@@ -69,30 +70,52 @@ class MainActivity : Activity() {
                 setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
             }
         }
-        root.addView(edit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        (loginForm ?: root).addView(edit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         return edit
     }
     private fun login() {
         connected = false
-        page("Connect to VPS")
-        val host = field("Server IP or hostname", prefs.getString("host", "").orEmpty())
-        val port = field("SSH port", prefs.getString("port", "22").orEmpty())
+        page("Admin SSH Terminal")
+        // Keep the login card vertically centered while allowing the keyboard to resize it.
+        val scrollArea = ScrollView(this).apply { isFillViewport = true }
+        root.addView(scrollArea, LinearLayout.LayoutParams(-1, 0, 1f))
+        val center = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(8), dp(6), dp(8))
+        }
+        scrollArea.addView(center, ScrollView.LayoutParams(-1, -1))
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        loginForm = form
+        center.addView(form)
+        form.addView(TextView(this).apply {
+            text = "Connect to VPS"
+            textSize = 23f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+        })
+        form.addView(TextView(this).apply {
+            text = "Your server is ready. Enter your password to connect."
+            textSize = 13f
+            setTextColor(Color.LTGRAY)
+            setPadding(0, dp(6), 0, dp(8))
+        })
+        val host = field("Server IP or hostname", prefs.getString("host", "135.125.9.81").orEmpty())
+        val port = field("SSH port", prefs.getString("port", "20040").orEmpty())
         port.inputType = InputType.TYPE_CLASS_NUMBER
-        val user = field("Username", prefs.getString("user", "").orEmpty())
+        val user = field("Username", prefs.getString("user", "root").orEmpty())
         user.setAutofillHints(View.AUTOFILL_HINT_USERNAME)
         val profile = { host.text.toString().trim() + ":" + port.text.toString().trim() + ":" + user.text.toString().trim() }
         val password = field("Password", vault.read(profile()).orEmpty(), true)
         val remember = CheckBox(this).apply {
-            text = "Remember VPS details"; setTextColor(Color.WHITE)
+            text = "Remember VPS details"
+            setTextColor(Color.WHITE)
             isChecked = prefs.getBoolean("remember", false)
         }
-        root.addView(remember)
-        root.addView(TextView(this).apply {
-            text = "Android Password Manager autofill may appear when enabled in system settings."
-            textSize = 12f; setTextColor(Color.LTGRAY)
-        })
-        root.addView(Button(this).apply {
-            text = "Connect"; isAllCaps = false
+        form.addView(remember)
+        form.addView(Button(this).apply {
+            text = "Connect"
+            isAllCaps = false
             setOnClickListener {
                 val h = host.text.toString().trim()
                 val p = port.text.toString().toIntOrNull()
@@ -108,13 +131,17 @@ class MainActivity : Activity() {
                     vault.save(profile(), pw)
                 } else {
                     val oldId = prefs.getString("host", "").orEmpty() + ":" +
-                        prefs.getString("port", "22").orEmpty() + ":" + prefs.getString("user", "").orEmpty()
+                        prefs.getString("port", "20040").orEmpty() + ":" + prefs.getString("user", "").orEmpty()
                     vault.delete(oldId)
                     prefs.edit().remove("host").remove("port").remove("user").putBoolean("remember", false).apply()
                 }
+                loginForm = null
                 connect(h, p, u, pw)
             }
-        }, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(16) })
+        }, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(12) })
+        // Avoid showing keyboard immediately on launch.
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
     }
     private fun terminal() {
         page("Admin SSH Terminal")
