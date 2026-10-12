@@ -118,9 +118,20 @@ class MainActivity : Activity() {
     }
     private fun terminal() {
         page("Admin SSH Terminal")
-        root.addView(TextView(this).apply {
+        val topRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        topRow.addView(TextView(this).apply {
             text = server; textSize = 12f; setTextColor(Color.LTGRAY)
-        })
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val menuButton = Button(this).apply { text = "⋮"; textSize = 20f }
+        topRow.addView(menuButton, LinearLayout.LayoutParams(dp(56), dp(48)))
+        menuButton.setOnClickListener {
+            val popup = PopupMenu(this, menuButton)
+            onCreateOptionsMenu(popup.menu)
+            popup.setOnMenuItemClickListener { item -> onOptionsItemSelected(item) }
+            popup.show()
+        }
+        root.addView(topRow)
         scroll = ScrollView(this)
         screen = TextView(this).apply {
             textSize = 14f; typeface = Typeface.MONOSPACE
