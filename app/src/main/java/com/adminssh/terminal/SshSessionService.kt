@@ -28,7 +28,15 @@ class SshSessionService : Service() {
     private val transcriptLock = Any()
 
     override fun onBind(intent: Intent?): IBinder = binder
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            startForeground(1001, notification("SSH session starting"))
+        } catch (e: Exception) {
+            android.util.Log.e("AdminSSH", "Foreground start failed", e)
+            stopSelf(startId)
+        }
+        return START_NOT_STICKY
+    }
 
     fun subscribe(listener: Listener) {
         listeners.add(listener)
@@ -79,7 +87,14 @@ class SshSessionService : Service() {
         ssh = connection
         connecting = true
         active = false
-        startForeground(1001, notification("Connecting to $serverLabel"))
+        try {
+            startForeground(1001, notification("Connecting to $serverLabel"))
+        } catch (e: Exception) {
+            connecting = false
+            publish("Background session unavailable: " + e.message + "\\n")
+            notifyState("Service unavailable")
+            return
+        }
         publish("Connecting to $serverLabel...\n")
         notifyState("Connecting")
         Thread {
