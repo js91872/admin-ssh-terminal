@@ -6,6 +6,8 @@ import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.connection.channel.direct.Session
 import java.security.MessageDigest
 import java.security.PublicKey
+import java.security.Security
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 /** Persistent PTY shell. Call connect on a worker thread, never the UI thread. */
 class InteractiveSsh {
@@ -20,6 +22,15 @@ class InteractiveSsh {
         onOutput: (String) -> Unit, onExit: (String) -> Unit
     ) {
         try {
+            // Android may expose an outdated built-in BC provider without X25519.
+            // Replace it with the bundled modern provider before SSHJ negotiates keys.
+            synchronized(Security::class.java) {
+                val current = Security.getProvider("BC")
+                if (current !is BouncyCastleProvider) {
+                    Security.removeProvider("BC")
+                    Security.insertProviderAt(BouncyCastleProvider(), 1)
+                }
+            }
             val ssh = SSHClient()
             client = ssh
             ssh.addHostKeyVerifier(object : HostKeyVerifier {
