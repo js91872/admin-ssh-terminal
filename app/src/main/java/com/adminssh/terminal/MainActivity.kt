@@ -1,270 +1,268 @@
 package com.adminssh.terminal
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
+import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.*
-import org.json.JSONArray
-import android.app.AlertDialog
-import android.content.Intent
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/**
- * Local-only command library and terminal theme preview.
- * No SSH connection is attempted in this milestone.
- */
 class MainActivity : Activity() {
-    private val prefs by lazy { getSharedPreferences("commands_v1", MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences("ssh_profiles", MODE_PRIVATE) }
+    private val vault by lazy { CredentialVault(this) }
+    private val log by lazy { File(filesDir, "ssh-history.txt") }
+    private var ssh: InteractiveSsh? = null
+    private var connected = false
+    private var server = ""
+    private var cmdColor = 0xff7dd3fc.toInt()
+    private var outColor = 0xffbbf7d0.toInt()
+    private var lastCommand = ""
+    private val lastOutput = StringBuilder()
+    private val transcript = SpannableStringBuilder()
     private lateinit var root: LinearLayout
-    private lateinit var commands: LinearLayout
-    private lateinit var preview: TextView
-    private var themeIndex = 0
-    private val palettes = listOf(
-        Triple("Classic Green", "#101810", "#75F29A"),
-        Triple("White on Black", "#101010", "#F5F5F5"),
-        Triple("Amber", "#21170B", "#FFCB70"),
-        Triple("Cyan Blue", "#101B2C", "#70DBFF"),
-        Triple("Matrix", "#000000", "#00FF41"),
-        Triple("Black on White", "#FFFFFF", "#222222")
-    )
+    private lateinit var screen: TextView
+    private lateinit var command: EditText
+    private lateinit var scroll: ScrollView
+    private val background = 0xff0f172a.toInt()
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        themeIndex = prefs.getInt("theme", 0).coerceIn(palettes.indices)
-        window.statusBarColor = Color.rgb(15, 23, 42)
-        window.navigationBarColor = Color.rgb(15, 23, 42)
-        val scroll = ScrollView(this)
+        window.statusBarColor = background
+        window.navigationBarColor = background
+        cmdColor = prefs.getInt("cmdColor", cmdColor)
+        outColor = prefs.getInt("outColor", outColor)
+        login()
+    }
+    private fun page(title: String) {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 16, 20, 32)
-            setBackgroundColor(Color.rgb(15, 23, 42))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setBackgroundColor(background)
         }
-        scroll.addView(root)
-        setContentView(scroll)
-        heading("Admin SSH", 21)
-        label("Servers  •  Commands  •  History", "#7DD3FC")
-        
-        heading("Terminal appearance", 17)
-        val selector = Spinner(this)
-        selector.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, palettes.map { it.first })
-        selector.setSelection(themeIndex)
-        root.addView(selector)
-        preview = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = 13f
-            setPadding(14, 16, 14, 16)
-            text = "root@server:~# git status\nOn branch main\nWorking tree clean"
-        }
-        root.addView(preview)
-        selector.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                themeIndex = position
-                prefs.edit().putInt("theme", position).apply()
-                applyPalette()
+        root.addView(TextView(this).apply {
+            text = title; textSize = 22f; setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        setContentView(root)
+    }
+    private fun field(hintText: String, initial: String = "", password: Boolean = false): EditText {
+        val edit = EditText(this).apply {
+            hint = hintText; setText(initial); textSize = 16f
+            setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(0xff1e293b.toInt())
+            setSingleLine(true)
+            if (password) {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
             }
         }
-        heading("Saved commands", 17)
-        val name = EditText(this).apply { hint = "Task name"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        val command = EditText(this).apply { hint = "Command (e.g. uptime)"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY); typeface = Typeface.MONOSPACE }
-        root.addView(name)
-        root.addView(command)
-        Button(this).apply {
-            text = "Save command"
-            setOnClickListener {
-                val n = name.text.toString().trim()
-                val c = command.text.toString().trim()
-                if (n.isEmpty() || c.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Enter a name and command", Toast.LENGTH_SHORT).show()
-                } else {
-                    val items = loadCommands()
-                    items.put(org.json.JSONObject().put("name", n).put("command", c))
-                    prefs.edit().putString("items", items.toString()).apply()
-                    name.text.clear(); command.text.clear()
-                    renderCommands()
-                }
-            }
-        }.also { root.addView(it) }
-        commands = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(commands)
-        renderCommands()
-        heading("SSH command runner", 17)
-        val host = EditText(this).apply { hint = "Host / IP only (not an ssh command)"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        val port = EditText(this).apply { hint = "Port (22)"; inputType = 2; setText("22"); setTextColor(Color.WHITE) }
-        val user = EditText(this).apply { hint = "Username"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        val password = EditText(this).apply { hint = "Password"; inputType = 129; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        val remoteCommand = EditText(this).apply { hint = "Command to run"; setSingleLine(true); setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY) }
-        listOf(host, port, user, password, remoteCommand).forEach { root.addView(it) }
-        val vault = CredentialVault(this)
-        val history = HistoryStore(this)
-        val connectionPrefs = getSharedPreferences("ssh_profiles", MODE_PRIVATE)
-        host.setText(connectionPrefs.getString("host", ""))
-        port.setText(connectionPrefs.getString("port", "22"))
-        user.setText(connectionPrefs.getString("user", ""))
-        val profileId = { host.text.toString().trim() + ":" + port.text.toString().trim() + ":" + user.text.toString().trim() }
-        password.setText(vault.read(profileId()) ?: "")
-        val output = TextView(this).apply {
-            text = "SSH output will appear here"
-            textSize = 13f; typeface = Typeface.MONOSPACE
-            setTextColor(Color.rgb(210, 225, 235))
-            setPadding(12, 20, 12, 20)
-            setTextIsSelectable(true)
+        root.addView(edit, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        return edit
+    }
+    private fun login() {
+        connected = false
+        page("Connect to VPS")
+        val host = field("Server IP or hostname", prefs.getString("host", "").orEmpty())
+        val port = field("SSH port", prefs.getString("port", "22").orEmpty())
+        port.inputType = InputType.TYPE_CLASS_NUMBER
+        val user = field("Username", prefs.getString("user", "").orEmpty())
+        user.setAutofillHints(View.AUTOFILL_HINT_USERNAME)
+        val profile = { host.text.toString().trim() + ":" + port.text.toString().trim() + ":" + user.text.toString().trim() }
+        val password = field("Password", vault.read(profile()).orEmpty(), true)
+        val remember = CheckBox(this).apply {
+            text = "Remember VPS details"; setTextColor(Color.WHITE)
+            isChecked = prefs.getBoolean("remember", false)
         }
-        root.addView(output)
-        Button(this).apply {
-            text = "Run SSH command"
+        root.addView(remember)
+        root.addView(TextView(this).apply {
+            text = "Android Password Manager autofill may appear when enabled in system settings."
+            textSize = 12f; setTextColor(Color.LTGRAY)
+        })
+        root.addView(Button(this).apply {
+            text = "Connect"; isAllCaps = false
             setOnClickListener {
                 val h = host.text.toString().trim()
-                val pt = port.text.toString().toIntOrNull()
+                val p = port.text.toString().toIntOrNull()
                 val u = user.text.toString().trim()
                 val pw = password.text.toString()
-                val cmd = remoteCommand.text.toString().trim()
-                if (h.isEmpty() || pt == null || pt !in 1..65535 || u.isEmpty() || pw.isEmpty() || cmd.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Complete all connection and command fields", Toast.LENGTH_LONG).show()
+                if (h.isBlank() || h.contains(' ') || p == null || p !in 1..65535 || u.isBlank() || pw.isBlank()) {
+                    Toast.makeText(this@MainActivity, "Enter valid server login details", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
-                val id = profileId()
-                connectionPrefs.edit().putString("host", h).putString("port", pt.toString()).putString("user", u).apply()
-                vault.save(id, pw)
-                output.text = "Connecting..."
-                Thread {
-                    try {
-                        val trusted = connectionPrefs.getString("hostkey:$h:$pt", null)
-                        var newlyApproved: String? = null
-                        val result = SshRunner().execute(h, pt, u, pw, cmd, trusted) { fingerprint ->
-                            val latch = CountDownLatch(1)
-                            var approved = false
-                            runOnUiThread {
-                                AlertDialog.Builder(this@MainActivity)
-                                    .setTitle("Verify SSH server identity")
-                                    .setMessage("Server: $h:$pt\\nHost key: $fingerprint\\nConfirm this fingerprint through a trusted channel before accepting.")
-                                    .setPositiveButton("Trust host") { _, _ -> approved = true; latch.countDown() }
-                                    .setNegativeButton("Cancel") { _, _ -> latch.countDown() }
-                                    .setOnCancelListener { latch.countDown() }
-                                    .show()
-                            }
-                            if (!latch.await(90, TimeUnit.SECONDS)) false else {
-                                if (approved) newlyApproved = fingerprint
-                                approved
-                            }
-                        }
-                        newlyApproved?.let { connectionPrefs.edit().putString("hostkey:$h:$pt", it).apply() }
-                        history.append("$u@$h:$pt", cmd, result.output, result.exitCode)
-                        runOnUiThread { output.text = result.output.ifBlank { "(No output) Exit: ${result.exitCode}" } }
-                    } catch (e: Exception) {
-                        runOnUiThread { output.text = "SSH error: ${e.javaClass.simpleName}: ${e.message ?: "Connection failed"}" }
-                    }
-                }.start()
-            }
-        }.also { root.addView(it) }
-        heading("Execution history", 17)
-        val search = EditText(this).apply {
-            hint = "Search server, command or output"
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-        }
-        root.addView(search)
-        val historyResults = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(historyResults)
-        fun refreshHistory(query: String) {
-            historyResults.removeAllViews()
-            val records = history.list()
-            var found = 0
-            for (i in records.length() - 1 downTo 0) {
-                val item = records.optJSONObject(i) ?: continue
-                val text = item.optString("server") + " > " + item.optString("command") +
-                    "\\n" + item.optString("output")
-                if (query.isNotBlank() && !text.contains(query, ignoreCase = true)) continue
-                found++
-                val time = java.text.DateFormat.getDateTimeInstance().format(
-                    java.util.Date(item.optLong("timestamp"))
-                )
-                val line = "$time  |  " + text.take(1000)
-                label(line, "#CBD5E1", historyResults)
-            }
-            if (found == 0) label("No matching records", "#94A3B8", historyResults)
-        }
-        search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                refreshHistory(s?.toString().orEmpty())
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        })
-        Button(this).apply {
-            text = "Share history as text"
-            setOnClickListener {
-                val records = history.list()
-                val export = StringBuilder()
-                for (i in 0 until records.length()) {
-                    val item = records.optJSONObject(i) ?: continue
-                    export.append("Server: ").append(item.optString("server")).append('\n')
-                        .append("Command: ").append(item.optString("command")).append('\n')
-                        .append("Output:\\n").append(item.optString("output")).append("\\n---\\n")
+                if (remember.isChecked) {
+                    prefs.edit().putString("host", h).putString("port", p.toString())
+                        .putString("user", u).putBoolean("remember", true).apply()
+                    vault.save(profile(), pw)
+                } else {
+                    val oldId = prefs.getString("host", "").orEmpty() + ":" +
+                        prefs.getString("port", "22").orEmpty() + ":" + prefs.getString("user", "").orEmpty()
+                    vault.delete(oldId)
+                    prefs.edit().remove("host").remove("port").remove("user").putBoolean("remember", false).apply()
                 }
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Export sensitive terminal history?")
-                    .setMessage("Terminal output may contain credentials or other secrets. Review it before sharing.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Continue") { _, _ ->
-                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, export.toString())
-                        }, "Share terminal history"))
+                connect(h, p, u, pw)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(16) })
+    }
+    private fun terminal() {
+        page("Admin SSH Terminal")
+        root.addView(TextView(this).apply {
+            text = server; textSize = 12f; setTextColor(Color.LTGRAY)
+        })
+        scroll = ScrollView(this)
+        screen = TextView(this).apply {
+            textSize = 14f; typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE); setTextIsSelectable(true)
+            setPadding(dp(4), dp(14), dp(4), dp(14))
+            setLineSpacing(dp(2).toFloat(), 1.08f)
+        }
+        scroll.addView(screen)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        command = EditText(this).apply {
+            hint = "Type command"; setSingleLine(true)
+            textSize = 16f; typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
+            setBackgroundColor(0xff1e293b.toInt())
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnEditorActionListener { _, _, _ -> submit(); true }
+        }
+        row.addView(command, LinearLayout.LayoutParams(0, dp(52), 1f))
+        row.addView(Button(this).apply {
+            text = "↵"; setOnClickListener { submit() }
+        }, LinearLayout.LayoutParams(dp(62), dp(52)))
+        root.addView(row)
+    }
+    private fun append(value: String, color: Int) {
+        if (!::screen.isInitialized) return
+        val start = transcript.length
+        transcript.append(value)
+        transcript.setSpan(ForegroundColorSpan(color), start, transcript.length, 33)
+        screen.text = transcript
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+    private fun connect(host: String, port: Int, user: String, password: String) {
+        ssh?.disconnect()
+        val connection = InteractiveSsh()
+        ssh = connection
+        server = user + "@" + host + ":" + port
+        transcript.clear()
+        terminal()
+        append("Connecting to " + server + "...\n", outColor)
+        Thread {
+            var newFingerprint: String? = null
+            connection.connect(host, port, user, password, prefs.getString("hostkey:" + host + ":" + port, null),
+                { fingerprint ->
+                    val latch = CountDownLatch(1)
+                    var approved = false
+                    runOnUiThread {
+                        AlertDialog.Builder(this)
+                            .setTitle("Verify SSH host key")
+                            .setMessage("Server: " + host + ":" + port + "\nFingerprint: " + fingerprint +
+                                "\nVerify against a trusted server record.")
+                            .setPositiveButton("Trust") { _, _ -> approved = true; latch.countDown() }
+                            .setNegativeButton("Cancel") { _, _ -> latch.countDown() }
+                            .setOnCancelListener { latch.countDown() }.show()
+                    }
+                    val ok = latch.await(90, TimeUnit.SECONDS) && approved
+                    if (ok) newFingerprint = fingerprint
+                    ok
+                },
+                { output ->
+                    newFingerprint?.let {
+                        prefs.edit().putString("hostkey:" + host + ":" + port, it).apply()
+                        newFingerprint = null
+                    }
+                    runOnUiThread {
+                        connected = true
+                        val clean = output.replace(Regex("\u001B\\[[0-?]*[ -/]*[@-~]"), "").replace("\r", "")
+                        append(clean, outColor)
+                        synchronized(lastOutput) { lastOutput.append(clean) }
+                        try { log.appendText(clean) } catch (_: Exception) {}
+                    }
+                },
+                { reason ->
+                    runOnUiThread {
+                        connected = false
+                        append("\n" + reason + "\n", outColor)
+                        if (::command.isInitialized) command.isEnabled = false
+                    }
+                })
+        }.start()
+    }
+    private fun submit() {
+        val value = command.text.toString()
+        if (value.isBlank()) return
+        if (!connected) {
+            Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lastCommand = value
+        synchronized(lastOutput) { lastOutput.setLength(0) }
+        append("\n$ " + value + "\n", cmdColor)
+        try { log.appendText("\n[" + server + "] $ " + value + "\n") } catch (_: Exception) {}
+        command.text.clear()
+        Thread {
+            try { ssh?.send(value) }
+            catch (e: Exception) { runOnUiThread { append("Send failed: " + e.message + "\n", outColor) } }
+        }.start()
+    }
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menu.add(0, 1, 0, "Command color")
+        menu.add(0, 2, 1, "Output color")
+        menu.add(0, 3, 2, "Copy last command + output")
+        menu.add(0, 4, 3, "View history")
+        menu.add(0, 5, 4, "Share TXT history")
+        menu.add(0, 6, 5, "Disconnect")
+        return true
+    }
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            1, 2 -> {
+                val colors = intArrayOf(0xff7dd3fc.toInt(), 0xff86efac.toInt(), Color.WHITE, 0xffffcc66.toInt(), 0xffd8b4fe.toInt())
+                AlertDialog.Builder(this).setTitle(if (item.itemId == 1) "Command color" else "Output color")
+                    .setItems(arrayOf("Blue", "Green", "White", "Amber", "Purple")) { _, index ->
+                        if (item.itemId == 1) cmdColor = colors[index] else outColor = colors[index]
+                        prefs.edit().putInt(if (item.itemId == 1) "cmdColor" else "outColor", colors[index]).apply()
                     }.show()
             }
-        }.also { root.addView(it) }
-        refreshHistory("")
-
-    }
-    private fun loadCommands(): JSONArray = try { JSONArray(prefs.getString("items", "[]")) } catch (_: Exception) { JSONArray() }
-    private fun renderCommands() {
-        commands.removeAllViews()
-        val items = loadCommands()
-        for (i in 0 until items.length()) {
-            val item = items.getJSONObject(i)
-            val title = item.optString("name")
-            val command = item.optString("command")
-            label("$title  —  $command", "#E2E8F0", commands)
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            Button(this).apply {
-                text = "Copy"
-                setOnClickListener {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText(title, command))
-                    Toast.makeText(this@MainActivity, "Command copied", Toast.LENGTH_SHORT).show()
-                }
-            }.also { actions.addView(it) }
-            Button(this).apply {
-                text = "Delete"
-                setOnClickListener {
-                    val updated = JSONArray()
-                    for (j in 0 until items.length()) if (j != i) updated.put(items.getJSONObject(j))
-                    prefs.edit().putString("items", updated.toString()).apply()
-                    renderCommands()
-                }
-            }.also { actions.addView(it) }
-            commands.addView(actions)
+            3 -> {
+                val text = "$ " + lastCommand + "\n" + synchronized(lastOutput) { lastOutput.toString() }
+                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("SSH command and output", text))
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+            }
+            4 -> AlertDialog.Builder(this).setTitle("Saved history")
+                .setMessage(if (log.exists()) log.readText().takeLast(20000) else "No history")
+                .setPositiveButton("Close", null).show()
+            5 -> AlertDialog.Builder(this).setTitle("Share terminal history?")
+                .setMessage("History may contain secrets. Review before sharing.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Share") { _, _ ->
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, if (log.exists()) log.readText() else "")
+                    }, "Share SSH history"))
+                }.show()
+            6 -> { ssh?.disconnect(); login() }
+            else -> return super.onOptionsItemSelected(item)
         }
+        return true
     }
-    private fun applyPalette() {
-        val p = palettes[themeIndex]
-        preview.setBackgroundColor(Color.parseColor(p.second))
-        preview.setTextColor(Color.parseColor(p.third))
-    }
-    private fun heading(value: String, size: Int) {
-        root.addView(TextView(this).apply {
-            text = value; textSize = size.toFloat(); setTextColor(Color.WHITE)
-            setPadding(0, 14, 0, 8); typeface = Typeface.DEFAULT_BOLD
-        })
-    }
-    private fun label(value: String, color: String, target: LinearLayout = root) {
-        target.addView(TextView(this).apply {
-            text = value; textSize = 13f; setTextColor(Color.parseColor(color))
-            setPadding(0, 8, 0, 8); typeface = Typeface.MONOSPACE
-        })
+    override fun onDestroy() {
+        ssh?.disconnect()
+        super.onDestroy()
     }
 }
