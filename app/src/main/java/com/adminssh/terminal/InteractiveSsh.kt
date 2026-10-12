@@ -42,6 +42,7 @@ class InteractiveSsh {
                 }
             })
             ssh.connect(host, port)
+            ssh.connection.keepAlive.setKeepAliveInterval(30)
             ssh.authPassword(user, password)
             val s = ssh.startSession()
             session = s
