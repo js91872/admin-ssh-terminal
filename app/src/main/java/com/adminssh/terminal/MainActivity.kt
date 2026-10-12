@@ -109,7 +109,7 @@ class MainActivity : Activity() {
         cmdColor = prefs.getInt("cmdColor", cmdColor)
         outColor = prefs.getInt("outColor", outColor)
         login()
-        bindService(Intent(this, SshSessionService::class.java), connection, BIND_AUTO_CREATE)
+        bound = bindService(Intent(this, SshSessionService::class.java), connection, BIND_AUTO_CREATE)
     }
     private fun page(title: String) {
         root = LinearLayout(this).apply {
@@ -297,7 +297,14 @@ class MainActivity : Activity() {
         transcript.clear()
         terminal()
         command.isEnabled = false
-        startForegroundService(Intent(this, SshSessionService::class.java))
+        try {
+            startForegroundService(Intent(this, SshSessionService::class.java))
+        } catch (e: Exception) {
+            android.util.Log.e("AdminSSH", "Service start failed", e)
+            Toast.makeText(this, "Service error: " + e.message, Toast.LENGTH_LONG).show()
+            login()
+            return
+        }
         val details = arrayOf(host, port.toString(), user, password)
         if (service == null) pending = details
         else service?.connect(host, port, user, password, prefs.getString("hostkey:$host:$port", null))
@@ -366,7 +373,8 @@ class MainActivity : Activity() {
         root.requestApplyInsets()
     }
     override fun onDestroy() {
-        if (bound) { service?.unsubscribe(listener); unbindService(connection); bound = false }
+        service?.unsubscribe(listener)
+        if (bound) { unbindService(connection); bound = false }
         super.onDestroy()
     }
 }
