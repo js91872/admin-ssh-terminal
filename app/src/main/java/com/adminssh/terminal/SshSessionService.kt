@@ -91,7 +91,7 @@ class SshSessionService : Service() {
             startForeground(1001, notification("Connecting to $serverLabel"))
         } catch (e: Exception) {
             connecting = false
-            publish("Background session unavailable: " + e.message + "\\n")
+            publish("Background session unavailable: " + e.message + "\n")
             notifyState("Service unavailable")
             return
         }
