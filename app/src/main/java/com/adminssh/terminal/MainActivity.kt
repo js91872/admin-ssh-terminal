@@ -84,7 +84,7 @@ class MainActivity : Activity() {
             gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(dp(6), dp(8), dp(6), dp(8))
         }
-        scrollArea.addView(center, ScrollView.LayoutParams(-1, -1))
+        scrollArea.addView(center, android.widget.FrameLayout.LayoutParams(-1, -1))
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         loginForm = form
         center.addView(form)
