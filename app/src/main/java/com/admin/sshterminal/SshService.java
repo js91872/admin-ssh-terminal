@@ -24,7 +24,7 @@ public class SshService extends Service {
   PendingIntent pending=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
   Intent stop=new Intent(this,SshService.class).setAction(STOP);
   PendingIntent stopPending=PendingIntent.getService(this,1,stop,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-  return new NotificationCompat.Builder(this,"ssh-active").setSmallIcon(android.R.drawable.stat_sys_data_connected).setContentTitle("VPS SSH Terminal").setContentText(status).setOngoing(true).setContentIntent(pending).addAction(android.R.drawable.ic_menu_close_clear_cancel,"Disconnect",stopPending).build();
+  return new NotificationCompat.Builder(this,"ssh-active").setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("VPS SSH Terminal").setContentText(status).setOngoing(true).setContentIntent(pending).addAction(android.R.drawable.ic_menu_close_clear_cancel,"Disconnect",stopPending).build();
  }
  private void notifyStatus(String s){((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(9,notification(s));}
  @Override public IBinder onBind(Intent intent){return binder;}
