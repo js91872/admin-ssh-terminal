@@ -33,6 +33,7 @@ public class TerminalActivity extends AppCompatActivity {
     private OutputStream sshOutputStream;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -104,7 +105,7 @@ public class TerminalActivity extends AppCompatActivity {
 
     private void sendCommand(String command) {
         if (sshOutputStream != null) {
-            executor.execute(() -> {
+            writerExecutor.execute(() -> {
                 try {
                     sshOutputStream.write(command.getBytes());
                     sshOutputStream.flush();
@@ -116,6 +117,11 @@ public class TerminalActivity extends AppCompatActivity {
     }
 
     private void appendOutput(String text) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(() -> appendOutput(text));
+            return;
+        }
+        if (isFinishing() || isDestroyed()) return;
         tvTerminalOutput.append(text);
         scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
     }
@@ -123,6 +129,8 @@ public class TerminalActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        executor.shutdownNow();
+        writerExecutor.shutdownNow();
         try {
             if (channelShell != null) channelShell.disconnect();
             if (session != null) session.disconnect();
