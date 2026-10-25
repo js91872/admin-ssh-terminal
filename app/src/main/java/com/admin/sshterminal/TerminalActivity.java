@@ -18,7 +18,7 @@ public class TerminalActivity extends AppCompatActivity {
  @Override protected void onCreate(Bundle state){super.onCreate(state);setContentView(R.layout.activity_terminal);
   screen=findViewById(R.id.tvTerminalOutput);command=findViewById(R.id.etCommandInput);scroll=findViewById(R.id.scrollView);
   findViewById(R.id.btnSend).setOnClickListener(v->{String cmd=command.getText().toString();if(!cmd.trim().isEmpty()){if(bound)service.send(cmd);else append("\n[Connecting…]\n");command.setText("");}});
-  findViewById(R.id.btnPaste).setOnClickListener(v->{ClipboardManager m=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(m!=null&&m.hasPrimaryClip()){CharSequence t=m.getPrimaryClip().getItemAt(0).coerceToText(this);command.setText(t);command.setSelection(command.length());}});
+  findViewById(R.id.btnPaste).setOnClickListener(v->{android.content.ClipboardManager m=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(m!=null&&m.hasPrimaryClip()){CharSequence t=m.getPrimaryClip().getItemAt(0).coerceToText(this);command.setText(t);command.setSelection(command.length());}});
   if(state==null&&getIntent().hasExtra("host")){
    Intent i=new Intent(this,SshService.class).setAction(SshService.START);i.putExtras(getIntent().getExtras());
    if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
