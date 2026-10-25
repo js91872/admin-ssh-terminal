@@ -18,7 +18,7 @@ public class SshService extends Service {
  private Listener listener;
  private Session session; private ChannelShell shell; private volatile OutputStream stream;
  private volatile boolean connected=false,closing=false,starting=false;
- @Override public void onCreate(){super.onCreate();NotificationManager mgr=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);mgr.createNotificationChannel(new NotificationChannel("ssh-active","SSH active session",NotificationManager.IMPORTANCE_LOW));startForeground(9,notification("Connecting…"));}
+ @Override public void onCreate(){super.onCreate();NotificationManager mgr=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);if(Build.VERSION.SDK_INT>=26)mgr.createNotificationChannel(new NotificationChannel("ssh-active","SSH active session",NotificationManager.IMPORTANCE_LOW));startForeground(9,notification("Connecting…"));}
  private Notification notification(String status){
   Intent open=new Intent(this,TerminalActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP|Intent.FLAG_ACTIVITY_CLEAR_TOP);
   PendingIntent pending=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
