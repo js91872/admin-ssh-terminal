@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0A0A0A">
+
+    <!-- Terminal Output Screen -->
+    <ScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12px"
+        android:fillViewport="true">
+
+        <TextView
+            android:id="@+id/tvTerminalOutput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Connecting to VPS...\n"
+            android:textColor="#00FF66"
+            android:textSize="15sp"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"/>
+    </ScrollView>
+
+    <!-- Bottom Command Input & Action Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#1E1E1E"
+        android:padding="8dp"
+        android:gravity="center_vertical">
+
+        <EditText
+            android:id="@+id/etCommandInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Type or paste command..."
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777"
+            android:textSize="15sp"
+            android:fontFamily="monospace"
+            android:background="@drawable/rounded_input_bg"
+            android:padding="10dp"
+            android:maxLines="4"/>
+
+        <Button
+            android:id="@+id/btnPaste"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Paste"
+            android:textSize="12sp"
+            android:layout_marginStart="6dp"
+            android:backgroundTint="#333333"
+            android:textColor="#FFFFFF"/>
+
+        <Button
+            android:id="@+id/btnSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Run"
+            android:textSize="12sp"
+            android:layout_marginStart="6dp"
+            android:backgroundTint="#00FF66"
+            android:textColor="#000000"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+</LinearLayout>
