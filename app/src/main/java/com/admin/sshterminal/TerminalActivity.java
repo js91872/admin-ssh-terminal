@@ -18,6 +18,7 @@ import com.jcraft.jsch.Session;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,7 +31,8 @@ public class TerminalActivity extends AppCompatActivity {
 
     private Session session;
     private ChannelShell channelShell;
-    private OutputStream sshOutputStream;
+    private volatile OutputStream sshOutputStream;
+    private volatile boolean shellReady = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
@@ -64,8 +66,8 @@ public class TerminalActivity extends AppCompatActivity {
 
         btnSend.setOnClickListener(v -> {
             String cmd = etCommandInput.getText().toString();
-            if (!cmd.isEmpty()) {
-                sendCommand(cmd + "\n");
+            if (!cmd.trim().isEmpty()) {
+                sendCommand(cmd);
                 etCommandInput.setText("");
             }
         });
@@ -84,11 +86,14 @@ public class TerminalActivity extends AppCompatActivity {
                 session.connect(10000); // 10 second timeout
 
                 channelShell = (ChannelShell) session.openChannel("shell");
+                channelShell.setPty(true);
+                channelShell.setPtyType("vt100", 100, 35, 800, 600);
                 InputStream inputStream = channelShell.getInputStream();
                 sshOutputStream = channelShell.getOutputStream();
 
                 channelShell.connect(10000);
-                appendOutput("Connected successfully to VPS Root!\n\n");
+                shellReady = true;
+                appendOutput("Connected successfully. Terminal ready.\n\n");
 
                 byte[] buffer = new byte[1024];
                 int i;
@@ -96,24 +101,36 @@ public class TerminalActivity extends AppCompatActivity {
                     String output = new String(buffer, 0, i);
                     mainHandler.post(() -> appendOutput(output));
                 }
-
+                shellReady = false;
+                appendOutput("\n[SSH session closed]\n");
             } catch (Exception e) {
+                shellReady = false;
                 mainHandler.post(() -> appendOutput("\n[Connection Error]: " + e.getMessage() + "\n"));
             }
         });
     }
 
     private void sendCommand(String command) {
-        if (sshOutputStream != null) {
-            writerExecutor.execute(() -> {
-                try {
-                    sshOutputStream.write(command.getBytes());
-                    sshOutputStream.flush();
-                } catch (Exception e) {
-                    mainHandler.post(() -> appendOutput("\n[Write Error]: " + e.getMessage() + "\n"));
-                }
-            });
+        if (!shellReady || sshOutputStream == null || channelShell == null || !channelShell.isConnected()) {
+            appendOutput("\n[Not connected] Wait for the shell prompt and reconnect if needed.\n");
+            return;
         }
+        // A pseudo-terminal expects a carriage return, like pressing Enter on a keyboard.
+        // Sending only LF can leave interactive shells waiting for input.
+        appendOutput("\n> " + command + "\n");
+        writerExecutor.execute(() -> {
+            try {
+                OutputStream stream = sshOutputStream;
+                if (stream == null || !channelShell.isConnected()) {
+                    appendOutput("\n[Connection lost] Command was not sent.\n");
+                    return;
+                }
+                stream.write((command + "\r").getBytes(StandardCharsets.UTF_8));
+                stream.flush();
+            } catch (Exception e) {
+                appendOutput("\n[Write Error]: " + e.getMessage() + "\n");
+            }
+        });
     }
 
     private void appendOutput(String text) {
@@ -129,6 +146,7 @@ public class TerminalActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        shellReady = false;
         executor.shutdownNow();
         writerExecutor.shutdownNow();
         try {
