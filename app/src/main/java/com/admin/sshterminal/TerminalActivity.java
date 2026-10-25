@@ -19,6 +19,12 @@ public class TerminalActivity extends AppCompatActivity {
   screen=findViewById(R.id.tvTerminalOutput);command=findViewById(R.id.etCommandInput);scroll=findViewById(R.id.scrollView);
   findViewById(R.id.btnSend).setOnClickListener(v->{String cmd=command.getText().toString();if(!cmd.trim().isEmpty()){if(bound)service.send(cmd);else append("\n[Connecting…]\n");command.setText("");}});
   findViewById(R.id.btnPaste).setOnClickListener(v->{android.content.ClipboardManager m=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(m!=null&&m.hasPrimaryClip()){CharSequence t=m.getPrimaryClip().getItemAt(0).coerceToText(this);command.setText(t);command.setSelection(command.length());}});
+  findViewById(R.id.btnRetry).setOnClickListener(v->{
+   if(!getIntent().hasExtra("host")){append("\n[Return to Login to reconnect]\n");return;}
+   Intent retry=new Intent(this,SshService.class).setAction(SshService.START);
+   retry.putExtras(getIntent().getExtras());
+   if(Build.VERSION.SDK_INT>=26)startForegroundService(retry);else startService(retry);
+  });
   if(state==null&&getIntent().hasExtra("host")){
    Intent i=new Intent(this,SshService.class).setAction(SshService.START);i.putExtras(getIntent().getExtras());
    if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
@@ -27,6 +33,7 @@ public class TerminalActivity extends AppCompatActivity {
  @Override protected void onStart(){super.onStart();bindService(new Intent(this,SshService.class),connection,0);}
  @Override protected void onStop(){if(bound){service.unlisten(listener);unbindService(connection);bound=false;}super.onStop();}
  private void append(String raw){
+  if("\u000c".equals(raw)){screen.setText("");return;}
   // Hide common terminal control sequences including bracketed-paste markers.
   String clean=raw.replaceAll("\\u001B\\[[0-9;?]*[ -/]*[@-~]","").replace("\r","");
   if(clean.isEmpty())return;
