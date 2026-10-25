@@ -30,7 +30,9 @@ public class SshService extends Service {
  @Override public IBinder onBind(Intent intent){return binder;}
  @Override public int onStartCommand(Intent i,int flags,int id){
   if(i!=null&&STOP.equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
-  if(i!=null&&START.equals(i.getAction())&&!starting){
+  if(i!=null&&START.equals(i.getAction())&&!connected){
+   if(starting){append("\n[Connection attempt already underway]\n");return START_NOT_STICKY;}
+   synchronized(log){log.setLength(0);}ui.post(()->{if(listener!=null)listener.output("\u000c");});
    starting=true;String host=i.getStringExtra("host"),user=i.getStringExtra("username"),pass=i.getStringExtra("password");
    int port=i.getIntExtra("port",22);
    if(host==null||user==null||pass==null){append("[Missing connection details]\n");stopSelf();}else connect(host,port,user,pass);
@@ -50,8 +52,8 @@ public class SshService extends Service {
    append("Connected. Terminal ready.\n");notifyStatus("Connected to "+host);
    byte[] buf=new byte[4096];int n;while(!closing&&(n=input.read(buf))!=-1)if(n>0)append(new String(buf,0,n,StandardCharsets.UTF_8));
    if(!closing)append("\n[Session closed]\n");
-  }catch(Exception e){if(!closing)append("\n[SSH error] "+e.getMessage()+"\n");}
-  finally{connected=false;close();if(!closing)notifyStatus("Disconnected");}});
+  }catch(Exception e){if(!closing)append("\n[SSH error] "+e.getMessage()+"\n[You can return to Login and try again.]\n");}
+  finally{connected=false;close();starting=false;if(!closing)notifyStatus("Disconnected");}});
  }
  public void send(String command){
   if(!connected||stream==null){append("\n[Not connected]\n");return;}
